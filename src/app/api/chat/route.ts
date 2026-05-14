@@ -38,20 +38,28 @@ export async function POST(req: Request) {
 
     const body = await req.json();
 
-    if (!body.prompt) {
+    if (!body.prompt || !body.prompt.trim()) {
       return NextResponse.json(
         { error: "Prompt is required" },
         { status: 400 }
       );
     }
 
+    if (!body.mode) {
+      return NextResponse.json(
+        { error: "Mode is required" },
+        { status: 400 }
+      );
+    }
+
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are an AI Study Buddy.
+      const completion = await Promise.race([
+        openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are an AI Study Buddy.
 
 Mode: ${body.mode}
 
@@ -63,24 +71,28 @@ Rules:
 - If mode is Summary, summarize
 - If mode is Flashcards, create flashcards
 - If mode is Explain, explain the topic`,
-          },
-          {
-            role: "user",
-            content: body.prompt,
-          },
-        ],
-      });
+            },
+            {
+              role: "user",
+              content: body.prompt,
+            },
+          ],
+        }),
+
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Request timeout")), 15000)
+        ),
+      ]);
 
       const aiReply =
-        completion.choices[0]?.message?.content ||
-        "No response";
+        (completion as OpenAI.Chat.Completions.ChatCompletion)
+          .choices[0]?.message?.content || "No response";
 
       return NextResponse.json({
         reply: aiReply,
       });
 
     } catch (openaiError) {
-
       console.log("OpenAI fallback mode activated");
 
       const fallbackResponse = `
@@ -93,7 +105,7 @@ Topic: ${body.prompt}
 This is a fallback AI response because OpenAI quota or billing is not active.
 
 Example explanation:
-${body.prompt} is an important study topic. 
+${body.prompt} is an important study topic.
 You should understand the main concepts, practice examples, and review the material regularly for better learning.
 `;
 
@@ -106,7 +118,9 @@ You should understand the main concepts, practice examples, and review the mater
     console.error("API chat error:", error);
 
     return NextResponse.json(
-      { error: "Something went wrong." },
+      {
+        error: "Something went wrong. Please try again.",
+      },
       { status: 500 }
     );
   }

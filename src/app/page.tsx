@@ -14,6 +14,7 @@ export default function HomePage() {
   const [mode, setMode] = useState("Explain");
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     checkUser();
@@ -30,7 +31,17 @@ export default function HomePage() {
   }
 
   async function handleGenerate() {
-    if (!prompt) return;
+    setError("");
+
+    if (!prompt.trim()) {
+      setError("Please write a topic before generating.");
+      return;
+    }
+
+    if (!navigator.onLine) {
+      setError("No internet connection. Please try again.");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -44,7 +55,7 @@ export default function HomePage() {
       } = await supabase.auth.getSession();
 
       if (!user || !session) {
-        alert("Please login");
+        setError("Please login first.");
         router.push("/auth");
         return;
       }
@@ -54,13 +65,22 @@ export default function HomePage() {
       if (!currentConversationId) {
         const conversation = await createConversation(user.id);
 
-        if (!conversation) return;
+        if (!conversation) {
+          setError("Could not create conversation.");
+          return;
+        }
 
         currentConversationId = conversation.id;
         setConversationId(conversation.id);
       }
 
       await saveMessage(currentConversationId, "user", prompt);
+
+      const controller = new AbortController();
+
+      const timeout = setTimeout(() => {
+        controller.abort();
+      }, 15000);
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -72,23 +92,35 @@ export default function HomePage() {
           prompt,
           mode,
         }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeout);
+
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "AI request failed.");
+      }
 
       const aiResponse =
         data.result ||
         data.reply ||
         data.message ||
-        data.error ||
         "No response";
 
       setReply(aiResponse);
 
       await saveMessage(currentConversationId, "assistant", aiResponse);
-    } catch (error) {
+      setPrompt("");
+    } catch (error: any) {
       console.error(error);
-      alert("Something went wrong");
+
+      if (error.name === "AbortError") {
+        setError("Request timed out. Please try again.");
+      } else {
+        setError(error.message || "Something went wrong. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -149,16 +181,28 @@ export default function HomePage() {
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         placeholder="Write your topic..."
+        disabled={loading}
         style={{
           width: "100%",
           height: "150px",
           padding: "15px",
           borderRadius: "10px",
-          marginBottom: "20px",
+          marginBottom: "10px",
           color: "white",
           background: "#1e293b",
         }}
       />
+
+      {error && (
+        <p
+          style={{
+            color: "#f87171",
+            marginBottom: "15px",
+          }}
+        >
+          {error}
+        </p>
+      )}
 
       <button
         onClick={handleGenerate}
@@ -167,12 +211,36 @@ export default function HomePage() {
           padding: "12px 24px",
           borderRadius: "10px",
           border: "none",
-          cursor: "pointer",
+          cursor: loading ? "not-allowed" : "pointer",
           marginBottom: "30px",
+          opacity: loading ? 0.7 : 1,
         }}
       >
         {loading ? "Generating..." : "Generate"}
       </button>
+
+      {error && (
+        <button
+          onClick={handleGenerate}
+          disabled={loading}
+          style={{
+            padding: "12px 24px",
+            borderRadius: "10px",
+            border: "none",
+            cursor: loading ? "not-allowed" : "pointer",
+            marginLeft: "10px",
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
+          Retry
+        </button>
+      )}
+
+      {loading && (
+        <p style={{ color: "#38bdf8", marginBottom: "20px" }}>
+          AI is generating your response...
+        </p>
+      )}
 
       {reply && (
         <div
