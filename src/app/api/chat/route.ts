@@ -1,66 +1,112 @@
 import OpenAI from "openai";
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 export async function POST(req: Request) {
   try {
-    const { notes, type } = await req.json();
+    const authHeader = req.headers.get("authorization");
 
-    if (!notes || !type) {
-      return Response.json(
-        { error: "Missing notes or type" },
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid session" },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
+
+    if (!body.prompt) {
+      return NextResponse.json(
+        { error: "Prompt is required" },
         { status: 400 }
       );
     }
 
-    let prompt = "";
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are an AI Study Buddy.
 
-    if (type === "summary") {
-      prompt = `Permbledh keto shenime ne pika kryesore:\n${notes}`;
+Mode: ${body.mode}
+
+Rules:
+- Explain clearly
+- Use simple language
+- Help the student understand
+- If mode is Quiz, create questions
+- If mode is Summary, summarize
+- If mode is Flashcards, create flashcards
+- If mode is Explain, explain the topic`,
+          },
+          {
+            role: "user",
+            content: body.prompt,
+          },
+        ],
+      });
+
+      const aiReply =
+        completion.choices[0]?.message?.content ||
+        "No response";
+
+      return NextResponse.json({
+        reply: aiReply,
+      });
+
+    } catch (openaiError) {
+
+      console.log("OpenAI fallback mode activated");
+
+      const fallbackResponse = `
+AI Study Buddy Demo Response
+
+Mode: ${body.mode}
+
+Topic: ${body.prompt}
+
+This is a fallback AI response because OpenAI quota or billing is not active.
+
+Example explanation:
+${body.prompt} is an important study topic. 
+You should understand the main concepts, practice examples, and review the material regularly for better learning.
+`;
+
+      return NextResponse.json({
+        reply: fallbackResponse,
+      });
     }
 
-    if (type === "quiz") {
-      prompt = `Krijo 5 pyetje quiz me pergjigje nga keto shenime:\n${notes}`;
-    }
-
-    if (type === "flashcards") {
-      prompt = `Krijo flashcards nga keto shenime. Secila flashcard duhet te kete pyetje dhe pergjigje:\n${notes}`;
-    }
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.4,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `
-Ti je AI Study Buddy per studente fillestare.
-Pergjigju gjithmone ne shqip.
-Jep pergjigje te qarta, te shkurtra dhe te dobishme.
-Kthe vetem JSON ne kete format:
-{
-  "title": "Titulli",
-  "content": "Pershkrimi kryesor",
-  "items": ["pika 1", "pika 2", "pika 3"]
-}
-`,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
-
-    const result = completion.choices[0].message.content;
-
-    return Response.json(JSON.parse(result || "{}"));
   } catch (error) {
-    return Response.json(
-      { error: "Something went wrong with AI API" },
+    console.error("API chat error:", error);
+
+    return NextResponse.json(
+      { error: "Something went wrong." },
       { status: 500 }
     );
   }
