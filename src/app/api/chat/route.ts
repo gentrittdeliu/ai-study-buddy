@@ -11,15 +11,28 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+function createFallbackResponse(prompt: string, mode: string) {
+  return `
+AI Study Buddy Demo Response
+
+Mode: ${mode}
+
+Topic: ${prompt}
+
+This is a fallback AI response because OpenAI quota or billing is not active.
+
+Example explanation:
+${prompt} is an important study topic.
+You should understand the main concepts, practice examples, and review the material regularly for better learning.
+`;
+}
+
 export async function POST(req: Request) {
   try {
     const authHeader = req.headers.get("authorization");
 
     if (!authHeader) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const token = authHeader.replace("Bearer ", "");
@@ -30,24 +43,17 @@ export async function POST(req: Request) {
     } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
-      return NextResponse.json(
-        { error: "Invalid session" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
     }
 
     const body = await req.json();
 
-    if (!body.prompt || !body.prompt.trim()) {
+    const prompt = body.prompt;
+    const mode = body.mode || "Explain";
+
+    if (!prompt || !prompt.trim()) {
       return NextResponse.json(
         { error: "Prompt is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!body.mode) {
-      return NextResponse.json(
-        { error: "Mode is required" },
         { status: 400 }
       );
     }
@@ -61,7 +67,7 @@ export async function POST(req: Request) {
               role: "system",
               content: `You are an AI Study Buddy.
 
-Mode: ${body.mode}
+Mode: ${mode}
 
 Rules:
 - Explain clearly
@@ -74,53 +80,34 @@ Rules:
             },
             {
               role: "user",
-              content: body.prompt,
+              content: prompt,
             },
           ],
         }),
-
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Request timeout")), 15000)
         ),
       ]);
 
       const aiReply =
-        (completion as OpenAI.Chat.Completions.ChatCompletion)
-          .choices[0]?.message?.content || "No response";
+        (completion as OpenAI.Chat.Completions.ChatCompletion).choices[0]
+          ?.message?.content || "No response";
 
       return NextResponse.json({
         reply: aiReply,
       });
-
     } catch (openaiError) {
       console.log("OpenAI fallback mode activated");
 
-      const fallbackResponse = `
-AI Study Buddy Demo Response
-
-Mode: ${body.mode}
-
-Topic: ${body.prompt}
-
-This is a fallback AI response because OpenAI quota or billing is not active.
-
-Example explanation:
-${body.prompt} is an important study topic.
-You should understand the main concepts, practice examples, and review the material regularly for better learning.
-`;
-
       return NextResponse.json({
-        reply: fallbackResponse,
+        reply: createFallbackResponse(prompt, mode),
       });
     }
-
   } catch (error) {
     console.error("API chat error:", error);
 
     return NextResponse.json(
-      {
-        error: "Something went wrong. Please try again.",
-      },
+      { error: "Something went wrong. Please try again." },
       { status: 500 }
     );
   }
