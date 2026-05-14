@@ -103,15 +103,12 @@ export default function HomePage() {
         throw new Error(data.error || "AI request failed.");
       }
 
-      const aiResponse =
-        data.result ||
-        data.reply ||
-        data.message ||
-        "No response";
+      const aiResponse = data.reply || data.result || data.message || "No response";
 
       setReply(aiResponse);
 
       await saveMessage(currentConversationId, "assistant", aiResponse);
+
       setPrompt("");
     } catch (error: any) {
       console.error(error);
@@ -164,17 +161,36 @@ export default function HomePage() {
         </button>
       </div>
 
+      <p style={{ color: "#cbd5e1", marginBottom: "20px" }}>
+        Choose a mode, write your topic, and generate a study response.
+      </p>
+
       <div
         style={{
           display: "flex",
           gap: "10px",
           marginBottom: "20px",
+          flexWrap: "wrap",
         }}
       >
-        <button onClick={() => setMode("Explain")}>Explain</button>
-        <button onClick={() => setMode("Summary")}>Summary</button>
-        <button onClick={() => setMode("Quiz")}>Quiz</button>
-        <button onClick={() => setMode("Flashcards")}>Flashcards</button>
+        {["Explain", "Summary", "Quiz", "Flashcards"].map((item) => (
+          <button
+            key={item}
+            onClick={() => setMode(item)}
+            disabled={loading}
+            style={{
+              padding: "10px 16px",
+              borderRadius: "8px",
+              border: "none",
+              cursor: loading ? "not-allowed" : "pointer",
+              background: mode === item ? "#38bdf8" : "#334155",
+              color: mode === item ? "#0f172a" : "white",
+              fontWeight: mode === item ? "bold" : "normal",
+            }}
+          >
+            {item}
+          </button>
+        ))}
       </div>
 
       <textarea
@@ -190,6 +206,8 @@ export default function HomePage() {
           marginBottom: "10px",
           color: "white",
           background: "#1e293b",
+          border: "1px solid #334155",
+          resize: "vertical",
         }}
       />
 
@@ -214,6 +232,9 @@ export default function HomePage() {
           cursor: loading ? "not-allowed" : "pointer",
           marginBottom: "30px",
           opacity: loading ? 0.7 : 1,
+          background: "#38bdf8",
+          color: "#0f172a",
+          fontWeight: "bold",
         }}
       >
         {loading ? "Generating..." : "Generate"}
@@ -249,6 +270,7 @@ export default function HomePage() {
             padding: "20px",
             borderRadius: "10px",
             whiteSpace: "pre-wrap",
+            border: "1px solid #334155",
           }}
         >
           {reply}
