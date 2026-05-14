@@ -4,10 +4,10 @@ import { useState } from "react";
 
 export default function Home() {
   const [notes, setNotes] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleGenerate() {
+  async function handleGenerate(type: string) {
     setLoading(true);
 
     const res = await fetch("/api/chat", {
@@ -15,45 +15,88 @@ export default function Home() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ notes }),
+      body: JSON.stringify({
+        notes,
+        type,
+      }),
     });
 
     const data = await res.json();
 
-    setAnswer(data.answer);
-
+    setAnswer(data);
     setLoading(false);
   }
 
   return (
-    <main className="min-h-screen bg-black text-white p-10">
-      <h1 className="text-4xl font-bold mb-6">
+    <main
+      style={{
+        padding: "40px",
+        maxWidth: "800px",
+        margin: "0 auto",
+        fontFamily: "Arial",
+      }}
+    >
+      <h1 style={{ fontSize: "40px", marginBottom: "20px" }}>
         AI Study Buddy
       </h1>
 
       <textarea
-        className="w-full h-52 p-4 rounded text-black"
-        placeholder="Shkruaj shenimet ketu..."
+        placeholder="Shkruaj shënimet..."
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
+        rows={10}
+        style={{
+          width: "100%",
+          padding: "12px",
+          fontSize: "16px",
+          borderRadius: "10px",
+        }}
       />
 
-      <button
-        onClick={handleGenerate}
-        className="mt-4 bg-blue-600 px-6 py-3 rounded"
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          marginTop: "20px",
+        }}
       >
-        {loading ? "Duke gjeneruar..." : "Gjenero"}
-      </button>
+        <button onClick={() => handleGenerate("summary")}>
+          Përmbledhje
+        </button>
+
+        <button onClick={() => handleGenerate("quiz")}>
+          Quiz
+        </button>
+
+        <button onClick={() => handleGenerate("flashcards")}>
+          Flashcards
+        </button>
+      </div>
+
+      {loading && (
+        <p style={{ marginTop: "20px" }}>
+          Duke gjeneruar...
+        </p>
+      )}
 
       {answer && (
-        <div className="mt-8 bg-gray-900 p-6 rounded">
-          <h2 className="text-2xl font-bold mb-3">
-            Pergjigja nga AI
-          </h2>
+        <div
+          style={{
+            marginTop: "30px",
+            padding: "20px",
+            border: "1px solid gray",
+            borderRadius: "10px",
+          }}
+        >
+          <h2>{answer.title}</h2>
 
-          <p className="whitespace-pre-wrap">
-            {answer}
-          </p>
+          <p>{answer.content}</p>
+
+          <ul>
+            {answer.items?.map((item: string, index: number) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
         </div>
       )}
     </main>
