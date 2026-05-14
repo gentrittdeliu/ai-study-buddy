@@ -1,58 +1,102 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-type Answer = {
-  title?: string;
-  content?: string;
-  items?: string[];
-  error?: string;
-};
+import { supabase } from "../../lib/supabaseClient";
+import { createConversation, saveMessage } from "../../lib/database";
 
-export default function Home() {
-  const [notes, setNotes] = useState("");
-  const [answer, setAnswer] = useState<Answer | null>(null);
+export default function HomePage() {
+  const router = useRouter();
+
+  const [prompt, setPrompt] = useState("");
+  const [reply, setReply] = useState("");
+  const [mode, setMode] = useState("Explain");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [conversationId, setConversationId] = useState("");
 
-  async function handleGenerate(type: string) {
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  async function checkUser() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/auth");
+    }
+  }
+
+  async function handleGenerate() {
+    if (!prompt) return;
+
     try {
-      if (!notes.trim()) {
-        setError("Ju lutem shkruani shenimet para se te gjeneroni.");
+      setLoading(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!user || !session) {
+        alert("Please login");
+        router.push("/auth");
         return;
       }
 
-      setLoading(true);
-      setError("");
-      setAnswer(null);
+      let currentConversationId = conversationId;
 
-      const res = await fetch("/api/chat", {
+      if (!currentConversationId) {
+        const conversation = await createConversation(user.id);
+
+        if (!conversation) return;
+
+        currentConversationId = conversation.id;
+        setConversationId(conversation.id);
+      }
+
+      await saveMessage(currentConversationId, "user", prompt);
+
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          notes,
-          type,
+          prompt,
+          mode,
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("API error");
-      }
+      const data = await response.json();
 
-      const data = await res.json();
+      const aiResponse =
+        data.result ||
+        data.reply ||
+        data.message ||
+        data.error ||
+        "No response";
 
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      setReply(aiResponse);
 
-      setAnswer(data);
-    } catch (err) {
-      setError("Diçka shkoi keq. Provo perseri.");
+      await saveMessage(currentConversationId, "assistant", aiResponse);
+    } catch (error) {
+      console.error(error);
+      alert("Something went wrong");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/auth");
   }
 
   return (
@@ -67,153 +111,81 @@ export default function Home() {
     >
       <div
         style={{
-          maxWidth: "850px",
-          margin: "0 auto",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "30px",
         }}
       >
-        <h1 style={{ fontSize: "42px", marginBottom: "10px" }}>
-          AI Study Buddy
-        </h1>
+        <h1>AI Study Buddy</h1>
 
-        <p style={{ color: "#cbd5e1", marginBottom: "25px" }}>
-          Shkruaj shenimet dhe AI do te krijoje permbledhje, quiz ose flashcards.
-        </p>
-
-        <textarea
-          placeholder="Shkruaj shenimet ketu..."
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={10}
+        <button
+          onClick={handleLogout}
           style={{
-            width: "100%",
-            padding: "15px",
-            fontSize: "16px",
-            borderRadius: "12px",
-            border: "1px solid #334155",
-            background: "#020617",
-            color: "white",
-            resize: "vertical",
-          }}
-        />
-
-        <div
-          style={{
-            display: "flex",
-            gap: "12px",
-            marginTop: "20px",
-            flexWrap: "wrap",
+            padding: "10px 20px",
+            borderRadius: "8px",
+            border: "none",
+            cursor: "pointer",
           }}
         >
-          <button
-            disabled={loading}
-            onClick={() => handleGenerate("summary")}
-            style={buttonStyle}
-          >
-            Permbledhje
-          </button>
-
-          <button
-            disabled={loading}
-            onClick={() => handleGenerate("quiz")}
-            style={buttonStyle}
-          >
-            Quiz
-          </button>
-
-          <button
-            disabled={loading}
-            onClick={() => handleGenerate("flashcards")}
-            style={buttonStyle}
-          >
-            Flashcards
-          </button>
-
-          <button
-            disabled={loading}
-            onClick={() => {
-              setNotes("");
-              setAnswer(null);
-              setError("");
-            }}
-            style={clearButtonStyle}
-          >
-            Pastro
-          </button>
-        </div>
-
-        {loading && (
-          <div
-            style={{
-              marginTop: "25px",
-              padding: "18px",
-              borderRadius: "12px",
-              background: "#1e293b",
-              border: "1px solid #334155",
-            }}
-          >
-            Duke menduar... ju lutem prisni.
-          </div>
-        )}
-
-        {error && (
-          <div
-            style={{
-              marginTop: "25px",
-              padding: "18px",
-              borderRadius: "12px",
-              background: "#7f1d1d",
-              border: "1px solid #ef4444",
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        {answer && (
-          <div
-            style={{
-              marginTop: "30px",
-              padding: "25px",
-              border: "1px solid #334155",
-              borderRadius: "14px",
-              background: "#020617",
-            }}
-          >
-            <h2 style={{ fontSize: "28px", marginBottom: "15px" }}>
-              {answer.title}
-            </h2>
-
-            <p style={{ color: "#e2e8f0", lineHeight: "1.6" }}>
-              {answer.content}
-            </p>
-
-            <ul style={{ marginTop: "15px", lineHeight: "1.8" }}>
-              {answer.items?.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+          Logout
+        </button>
       </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          marginBottom: "20px",
+        }}
+      >
+        <button onClick={() => setMode("Explain")}>Explain</button>
+        <button onClick={() => setMode("Summary")}>Summary</button>
+        <button onClick={() => setMode("Quiz")}>Quiz</button>
+        <button onClick={() => setMode("Flashcards")}>Flashcards</button>
+      </div>
+
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Write your topic..."
+        style={{
+          width: "100%",
+          height: "150px",
+          padding: "15px",
+          borderRadius: "10px",
+          marginBottom: "20px",
+          color: "white",
+          background: "#1e293b",
+        }}
+      />
+
+      <button
+        onClick={handleGenerate}
+        disabled={loading}
+        style={{
+          padding: "12px 24px",
+          borderRadius: "10px",
+          border: "none",
+          cursor: "pointer",
+          marginBottom: "30px",
+        }}
+      >
+        {loading ? "Generating..." : "Generate"}
+      </button>
+
+      {reply && (
+        <div
+          style={{
+            background: "#1e293b",
+            padding: "20px",
+            borderRadius: "10px",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {reply}
+        </div>
+      )}
     </main>
   );
 }
-
-const buttonStyle = {
-  padding: "12px 18px",
-  borderRadius: "10px",
-  border: "none",
-  background: "#2563eb",
-  color: "white",
-  cursor: "pointer",
-  fontWeight: "bold",
-};
-
-const clearButtonStyle = {
-  padding: "12px 18px",
-  borderRadius: "10px",
-  border: "1px solid #475569",
-  background: "transparent",
-  color: "white",
-  cursor: "pointer",
-};
